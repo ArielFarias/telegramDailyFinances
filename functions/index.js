@@ -43,47 +43,49 @@ app.post('/', async (req, res) => {
         if (message.startsWith('/', 0)) {
             var command = message.split('=')
             if (command.length == 1) {
-                console.log(`comando simples ${command[0]}`)
                 switch (command[0]) {
                     case '/help':
                         return res.status(200).send({
                             method: 'sendMessage',
                             chat_id,
-                            text: `Estes são os comandos disponiveis:\n/help {Descreve a lista de comandos disponíveis}\n/initalValue=100 {define o valor total do orçamento}\n/subtract=10 {subtrai 10 do valor total inicial e soma 10 no valor gasto diário}\n/daily {informa o valor gasto no dia}\n/current {informa o valor disponível no orçamento do mês}`
+                            text: `Atenção, todos os valores devem ser inteiros. Para iniciar um novo orçamento digite:\n/init=1000\nPara inserir um gasto digite:\n/sub=10\nPara adicionar um ganho digite:\n/add=10\nPara verificar o orçamento diário digite:\n/daily\nPara verificar o status do orçamento atual digite:\n/status`
                         })
                     case '/daily':
-                        var lastEntryDate = new Date(budget.lastEntryDate * 1000).toGMTString();
+                        var lastEntryDate = budget.lastEntryDate.toDate().toLocaleString('pt-BR')
                         return res.status(200).send({
                             method: 'sendMessage',
                             chat_id,
-                            text:`Último valor diário caculado foi em ${lastEntryDate}, o valor disponível para esse dia é de: ${budget.dailyValue} reais`
+                            text:`Último valor diário caculado foi em ${lastEntryDate}, o valor disponível para esse dia é de: R$${budget.dailyValue}`
                         })
-                    case '/current':
+                    case '/status':
+                        var sub = budget.initialValue - budget.currentValue;
+                        var waste = Math.trunc(sub*Math.pow(10, 2))/Math.pow(10, 2)
                         return res.status(200).send({
                             method: 'sendMessage',
                             chat_id,
-                            text:`O valor atual do orçamento é de ${budget.currentValue} reais, de um valor inicial de ${budget.initialValue}. Total gasto até agora é de ${budget.initialValue - budget.currentValue}.`
+                            text:`O valor atual do orçamento é de R$${budget.currentValue}, de um valor inicial de R$${budget.initialValue}. Total gasto até agora é de R$${waste}.`
                         })
                     default:
                         return res.status(200).send({
                             method: 'sendMessage',
                             chat_id,
-                            text: `Desculpe o comando ${command[0]} não existe, digite /help para obter a lista dos comandos disponíveis`
+                            text: `Desculpe o comando ${command[0]} não existe ou está faltando algum parâmetro, digite /help para obter a lista dos comandos disponíveis`
                         });
                 }
             } else if (command.length == 2) {
                 switch (command[0]) {
-                    case '/initialValue':
+                    case '/init':
                         if (isNaN(command[1])) {
                             return res.status(200).send({
                                 method: 'sendMessage',
                                 chat_id,
-                                text: `Desculpe o comando ${command[0]} deve poussuir um valor no numérico válido, ex: 10`
+                                text: `Desculpe o comando ${command[0]} deve poussuir um valor numérico válido, ex: 10`
                             });
                         } 
                         budget.initialValue = command[1];
                         budget.currentValue = command[1];
                         budget.dailyValue = command[1]/30;
+                        budget.dailyValue = Math.trunc(budget.dailyValue*Math.pow(10, 2))/Math.pow(10, 2)
                         budget.lastEntryDate = admin.firestore.Timestamp.fromDate(new Date());
 
                         await admin.firestore().collection('budget').doc(budgets.docs[0].id).set(budget);
@@ -91,30 +93,32 @@ app.post('/', async (req, res) => {
                         return res.status(200).send({
                             method: 'sendMessage',
                             chat_id,
-                            text: `Valor inicial do orçamento atualizado para ${command[1]} reais`
+                            text: `Valor inicial do orçamento atualizado para R$${command[1]}`
                         });
-                    case '/subtract':
+                    case '/sub':
                         if (isNaN(command[1])) {
                             return res.status(200).send({
                                 method: 'sendMessage',
                                 chat_id,
-                                text: `Desculpe o comando ${command[0]} deve poussuir um valor no numérico válido, ex: 10`
+                                text: `Desculpe o comando ${command[0]} deve poussuir um valor numérico válido, ex: 10`
                             });
                         }
 
                         var messageDate = new Date(messageTimestamp * 1000);
-                        var budgetLastEntryDate = new Date(budget.lastEntryDate * 1000);
+                        var budgetLastEntryDate = budget.lastEntryDate.toDate();
 
                         if (datesAreOnSameDay(messageDate, budgetLastEntryDate)) {
                             budget.currentValue = budget.currentValue - command[1];
                             budget.dailyValue = budget.dailyValue - command[1];
+                            budget.dailyValue = Math.trunc(budget.dailyValue*Math.pow(10, 2))/Math.pow(10, 2)
                             budget.lastEntryDate = admin.firestore.Timestamp.fromDate(new Date());
 
                             await admin.firestore().collection('budget').doc(budgets.docs[0].id).set(budget);
                         } else {
                             budget.currentValue = budget.currentValue - command[1];
-                            budget.dailyValue = command[1]/30;
+                            budget.dailyValue = budget.initialValue/30;
                             budget.dailyValue = budget.dailyValue - command[1];
+                            budget.dailyValue = Math.trunc(budget.dailyValue*Math.pow(10, 2))/Math.pow(10, 2)
                             budget.lastEntryDate = admin.firestore.Timestamp.fromDate(new Date());
 
                             await admin.firestore().collection('budget').doc(budgets.docs[0].id).set(budget);
@@ -123,7 +127,24 @@ app.post('/', async (req, res) => {
                         return res.status(200).send({
                             method: 'sendMessage',
                             chat_id,
-                            text: `Valor total restante do orçamento é de ${budget.currentValue} reais. Valor restante diário é de ${budget.dailyValue}.`
+                            text: `Valor total restante do orçamento é de R$${budget.currentValue}. Valor restante diário é de R$${budget.dailyValue}.`
+                        });
+                    case '/add':
+                        if (isNaN(command[1])) {
+                            return res.status(200).send({
+                                method: 'sendMessage',
+                                chat_id,
+                                text: `Desculpe o comando ${command[0]} deve poussuir um valor numérico válido, ex: 10`
+                            });
+                        }
+                        budget.currentValue = budget.currentValue + command[1]
+                        
+                        await admin.firestore().collection('budget').doc(budgets.docs[0].id).set(budget);
+
+                        return res.status(200).send({
+                            method: 'sendMessage',
+                            chat_id,
+                            text: `Valor total restante do orçamento é de R$${budget.currentValue}. Valor restante diário é de R$${budget.dailyValue}.`
                         });
                     default:
                         return res.status(200).send({
@@ -134,8 +155,7 @@ app.post('/', async (req, res) => {
                 }
             }
         } else {
-            console.log('return')
-            return res.status(200);
+            return res.status(200).send({ status: 'não é um comando' });
         }
     } else {
         await admin.firestore().collection('budget').add({
@@ -148,9 +168,10 @@ app.post('/', async (req, res) => {
         return res.status(200).send({
             method: 'sendMessage',
             chat_id,
-            text: `Olá ${first_name}, criei um novo orçamento para este grupo. O valor total do orçamento é divido pelo número de dias restantes do mês (baseado em um mês de 30 dias). A cada subtração irei informar o valor total restante do orçamento e o valor diário gasto em relação ao disponível para o dia.\nEstes são os comandos disponiveis:\n/help {Descreve a lista de comandos disponíveis}\n/initalValue=100 {define o valor total do orçamento}\n/subtract=10 {subtrai 10 do valor total inicial e soma 10 no valor gasto diário}\n/daily {informa o valor gasto no dia}\n/current {informa o valor disponível no orçamento do mês}`
+            text: `Olá ${first_name}, criei um novo orçamento para este grupo. digite /help para obter a lista de comandos e informações sobre como usar o bot`
         })
     }
+    return res.status(200).send({ status: 'mensagem do telegram comum' });
   }
 
   return res.status(200).send({ status: 'not a telegram message' })
